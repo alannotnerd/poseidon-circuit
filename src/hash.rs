@@ -683,20 +683,20 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
             chip_finals.push(final_state);
         }
 
-        layouter.assign_region(
-            || "final state dummy",
-            |mut region| {
-                for (state, final_state) in states_out.iter().zip(chip_finals.iter()) {
-                    for (s_cell, final_cell) in state.iter().zip(final_state.iter()) {
-                        let s_cell: AssignedCell<Fp, Fp> = s_cell.clone().into();
-                        let final_cell: AssignedCell<Fp, Fp> = final_cell.clone().into();
-                        region.constrain_equal(s_cell.cell(), final_cell.cell())?;
-                    }
-                }
-
+        let assignments = states_out.iter().flatten().zip(chip_finals.iter().flatten()).map(|(s_cell, final_cell)| {
+            |mut region: Region<'_, Fp>| -> Result<(), Error> {
+                let s_cell: AssignedCell<Fp, Fp> = s_cell.clone().into();
+                let final_cell: AssignedCell<Fp, Fp> = final_cell.clone().into();
+                region.constrain_equal(s_cell.cell(), final_cell.cell())?;
                 Ok(())
-            },
-        )
+            }
+        }).collect();
+
+        layouter.assign_regions(
+            || "final state dummy",
+            assignments
+        )?;
+        Ok(())
     }
 }
 
@@ -787,7 +787,8 @@ mod tests {
         }
     }
 
-    impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>> Circuit<Fr> for TestCircuit<PC> {
+    impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>> Circuit<Fr> for TestCircuit<PC>
+    {
         type Config = (SpongeConfig<Fr, PC>, usize);
         type FloorPlanner = SimpleFloorPlanner;
 
