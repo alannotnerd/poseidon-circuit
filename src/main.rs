@@ -8,7 +8,6 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
 };
-use hex;
 use poseidon_circuit::poseidon::Pow5Chip;
 use poseidon_circuit::{hash::*, DEFAULT_STEP};
 use rand::SeedableRng;
@@ -52,6 +51,7 @@ pub struct CliArgs {
     pub k: Option<u32>,
     pub inputs: Option<Vec<u64>>,
     pub controls: Option<Vec<u64>>,
+    pub calcs: Option<usize>,
     pub verify: Option<bool>,
     pub persist: Option<bool>,
 }
@@ -61,6 +61,7 @@ fn poseidon(args: CliArgs) -> Result<Vec<u8>, Error> {
 
     let inputs = args.inputs.unwrap_or(vec![1, 2, 30, 1, 65536, 0]);
     let controls = args.controls.unwrap_or(vec![0, 46, 14]);
+    let calcs = args.calcs.unwrap_or(4);
 
     let mut poseidon_inputs: Vec<[Fp; 2]> = vec![];
     for i in (0..inputs.len()).step_by(2) {
@@ -76,7 +77,7 @@ fn poseidon(args: CliArgs) -> Result<Vec<u8>, Error> {
     let os_rng = ChaCha8Rng::from_seed([101u8; 32]);
     let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
-    let circuit = TestCircuit(poseidon_hash_table, 4);
+    let circuit = TestCircuit(poseidon_hash_table, calcs);
 
     let prover = MockProver::run(k, &circuit, vec![]).unwrap();
     assert_eq!(prover.verify(), Ok(()));
