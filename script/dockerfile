@@ -4,7 +4,7 @@ COPY poseidon-circuit /app/poseidon-circuit
 ENV PATH="/app:${PATH}"
 ENV RUSTFLAGS="-Ctarget-feature=+aes,+sha"
 
-CMD ["sh", "-c", "/app/poseidon-circuit --controls 0,46,14 --inputs 1,2,30,1,65536,0"]
+CMD ["sh", "-c", "/app/poseidon-circuit -j '{}'"]
 
 # cp ../target/release/poseidon-circuit .
 # docker build -t poseidon .

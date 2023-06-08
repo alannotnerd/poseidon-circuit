@@ -13,8 +13,7 @@ use poseidon_circuit::poseidon::Pow5Chip;
 use poseidon_circuit::{hash::*, DEFAULT_STEP};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use std::env;
-
+use serde::{Deserialize, Serialize};
 struct TestCircuit(PoseidonHashTable<Fp>, usize);
 
 // test circuit derived from table data
@@ -47,48 +46,31 @@ impl Circuit<Fp> for TestCircuit {
     }
 }
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    let controls_index = args
-        .iter()
-        .position(|arg| arg == "--controls")
-        .expect("Missing --controls parameter");
-    let inputs_index = args
-        .iter()
-        .position(|arg| arg == "--inputs")
-        .expect("Missing --inputs parameter");
-    let controls: Vec<u64> = args[controls_index + 1]
-        .split(",")
-        .map(|s| s.parse::<u64>().unwrap())
-        .collect();
-    let inputs: Vec<u64> = args[inputs_index + 1]
-        .split(",")
-        .map(|s| s.parse::<u64>().unwrap())
-        .collect();
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CliArgs {
+    pub draw_graph: Option<bool>,
+    pub k: Option<u32>,
+    pub inputs: Option<Vec<u64>>,
+    pub controls: Option<Vec<u64>>,
+    pub verify: Option<bool>,
+    pub persist: Option<bool>,
+}
 
-    println!("controls: {:?}", controls);
-    println!("inputs: {:?}", inputs);
+fn poseidon(args: CliArgs) -> Result<Vec<u8>, Error> {
+    let k = args.k.unwrap_or(8);
 
-    // change controls and inputs to PoseidonHashTable
+    let inputs = args.inputs.unwrap_or(vec![1, 2, 30, 1, 65536, 0]);
+    let controls = args.controls.unwrap_or(vec![0, 46, 14]);
+
     let mut poseidon_inputs: Vec<[Fp; 2]> = vec![];
-    let mut poseidon_controls: Vec<u64> = vec![];
     for i in (0..inputs.len()).step_by(2) {
         poseidon_inputs.push([Fp::from(inputs[i]), Fp::from(inputs[i + 1])]);
     }
-    for i in controls.iter() {
-        poseidon_controls.push(*i);
-    }
-
-    println!("poseidon_inputs: {:?}", poseidon_inputs);
-    println!("poseidon_controls: {:?}", poseidon_controls);
-
     let poseidon_hash_table = PoseidonHashTable {
         inputs: poseidon_inputs,
-        controls: poseidon_controls,
+        controls: controls,
         ..Default::default()
     };
-
-    let k = 8;
 
     let params = Params::<Bn256>::unsafe_setup(k);
     let os_rng = ChaCha8Rng::from_seed([101u8; 32]);
@@ -113,7 +95,15 @@ fn main() {
     .unwrap();
 
     let proof_script = transcript.finalize();
-    // print proof with hex format
-    println!("{}", hex::encode(proof_script));
-    // let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof_script[..]);
+    // println!("{}", hex::encode(proof_script.clone()));
+
+    Ok(proof_script)
+}
+
+fn main() -> anyhow::Result<()> {
+    env_logger::init();
+    circuit_cli::run(|args: CliArgs| {
+        poseidon(args).map_err(|e| circuit_cli::Error::CliLogicError(e.to_string()))
+    })?;
+    Ok(())
 }
