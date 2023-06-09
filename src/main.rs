@@ -47,9 +47,8 @@ impl Circuit<Fp> for TestCircuit {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CliArgs {
-    pub draw_graph: Option<bool>,
     pub k: Option<u32>,
-    pub inputs: Option<Vec<u64>>,
+    pub inputs: Option<Vec<(u64, u64)>>,
     pub controls: Option<Vec<u64>>,
     pub calcs: Option<usize>,
     pub verify: Option<bool>,
@@ -59,13 +58,13 @@ pub struct CliArgs {
 fn poseidon(args: CliArgs) -> Result<Vec<u8>, Error> {
     let k = args.k.unwrap_or(8);
 
-    let inputs = args.inputs.unwrap_or(vec![1, 2, 30, 1, 65536, 0]);
+    let inputs = args.inputs.unwrap_or(vec![(1, 2), (30, 1), (65536, 0)]);
     let controls = args.controls.unwrap_or(vec![0, 46, 14]);
     let calcs = args.calcs.unwrap_or(4);
 
     let mut poseidon_inputs: Vec<[Fp; 2]> = vec![];
-    for i in (0..inputs.len()).step_by(2) {
-        poseidon_inputs.push([Fp::from(inputs[i]), Fp::from(inputs[i + 1])]);
+    for input in inputs.iter() {
+        poseidon_inputs.push([Fp::from(input.0), Fp::from(input.1)]);
     }
     let poseidon_hash_table = PoseidonHashTable {
         inputs: poseidon_inputs,
