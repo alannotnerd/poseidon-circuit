@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::BufReader;
 
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::halo2curves::bn256::{Bn256, Fr as Fp, G1Affine};
@@ -63,26 +63,11 @@ pub struct CliArgs {
     pub calcs: Option<usize>,
     pub verify: Option<bool>,
     pub persist: Option<bool>,
-    pub params_path: Option<String>,
-    pub proof_path: Option<String>,
 }
 
-fn verify_poseidon(args: CliArgs) -> Result<bool, Error> {
-    let params_path = args.params_path.unwrap();
-    let proof_path = args.proof_path.unwrap();
-    let calcs = args.calcs.unwrap_or(4);
-
-    let params_fs = File::open(params_path).expect("Couldn't load params");
-    let params: ParamsKZG<Bn256> =
-        Params::read::<_>(&mut BufReader::new(params_fs)).expect("Failed to read params");
-
-    let mut proof_fs = File::open(proof_path).expect("Failed to open proof file");
-    let mut proof_script = Vec::new();
-    proof_fs
-        .read_to_end(&mut proof_script)
-        .expect("Failed to read proof file");
-
-    verify_generated_proof(params, calcs, &proof_script)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CliVerifyArgs {
+    pub calcs: Option<usize>,
 }
 
 fn poseidon(args: CliArgs) -> Result<(Vec<u8>, Vec<u8>), Error> {
@@ -158,6 +143,15 @@ fn verify_generated_proof(
     Ok(true)
 }
 
+fn verify_poseidon(
+    args: CliVerifyArgs,
+    params: ParamsKZG<Bn256>,
+    proof_script: &[u8],
+) -> Result<bool, Error> {
+    let calcs = args.calcs.unwrap_or(4);
+    verify_generated_proof(params, calcs, proof_script)
+}
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
@@ -165,8 +159,11 @@ fn main() -> anyhow::Result<()> {
         |args: CliArgs| {
             poseidon(args).map_err(|e| circuit_cli::Error::CliLogicError(e.to_string()))
         },
-        |args: CliArgs| {
-            verify_poseidon(args).map_err(|e| circuit_cli::Error::CliLogicError(e.to_string()))
+        |args: CliVerifyArgs, params_reader: &mut BufReader<File>, proof: &[u8]| {
+            let params: ParamsKZG<Bn256> =
+                Params::read::<_>(params_reader).expect("Failed to read params");
+            verify_poseidon(args, params, proof)
+                .map_err(|e| circuit_cli::Error::CliLogicError(e.to_string()))
         },
     )?;
     Ok(())
