@@ -1,3 +1,6 @@
+use std::fs::File;
+use std::io::{BufReader, Read};
+
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use halo2_proofs::dev::MockProver;
@@ -62,15 +65,25 @@ pub struct CliArgs {
     pub calcs: Option<usize>,
     pub verify: Option<bool>,
     pub persist: Option<bool>,
-    pub proof: Option<String>,
+    pub params_path: Option<String>,
+    pub proof_path: Option<String>,
 }
 
 fn verify_poseidon(args: CliArgs) -> Result<bool, Error> {
-    let proof = args.proof.unwrap();
-    let k = args.k.unwrap_or(8);
+    let params_path = args.params_path.unwrap();
+    let proof_path = args.proof_path.unwrap();
     let calcs = args.calcs.unwrap_or(4);
-    let params = ParamsKZG::<Bn256>::unsafe_setup(k);
-    let proof_script = BASE64_STANDARD.decode(proof.as_bytes()).unwrap();
+
+    let params_fs = File::open(params_path).expect("Couldn't load params");
+    let params: ParamsKZG<Bn256> =
+        Params::read::<_>(&mut BufReader::new(params_fs)).expect("Failed to read params");
+
+    let mut proof_fs = File::open(proof_path).expect("Failed to open proof file");
+    let mut proof_script = Vec::new();
+    proof_fs
+        .read_to_end(&mut proof_script)
+        .expect("Failed to read proof file");
+
     verify_generated_proof(params, calcs, &proof_script)
 }
 
