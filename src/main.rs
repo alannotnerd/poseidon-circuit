@@ -1,9 +1,17 @@
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::halo2curves::bn256::{Bn256, Fr as Fp, G1Affine};
-use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk};
-use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG as Params};
-use halo2_proofs::poly::kzg::multiopen::ProverSHPLONK;
-use halo2_proofs::transcript::{Blake2bWrite, Challenge255, TranscriptWriterBuffer};
+use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
+use halo2_proofs::poly::commitment::{Params, ParamsProver};
+use halo2_proofs::poly::kzg::commitment::{
+    KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG as ParamsVerifier,
+};
+use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
+use halo2_proofs::poly::kzg::strategy::SingleStrategy;
+use halo2_proofs::transcript::{
+    Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
@@ -13,6 +21,7 @@ use poseidon_circuit::{hash::*, DEFAULT_STEP};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
+
 struct TestCircuit(PoseidonHashTable<Fp>, usize);
 
 // test circuit derived from table data
@@ -53,9 +62,19 @@ pub struct CliArgs {
     pub calcs: Option<usize>,
     pub verify: Option<bool>,
     pub persist: Option<bool>,
+    pub proof: Option<String>,
 }
 
-fn poseidon(args: CliArgs) -> Result<Vec<u8>, Error> {
+fn verify_poseidon(args: CliArgs) -> Result<bool, Error> {
+    let proof = args.proof.unwrap();
+    let k = args.k.unwrap_or(8);
+    let calcs = args.calcs.unwrap_or(4);
+    let params = ParamsKZG::<Bn256>::unsafe_setup(k);
+    let proof_script = BASE64_STANDARD.decode(proof.as_bytes()).unwrap();
+    verify_generated_proof(params, calcs, &proof_script)
+}
+
+fn poseidon(args: CliArgs) -> Result<(Vec<u8>, Vec<u8>), Error> {
     let k = args.k.unwrap_or(8);
 
     let inputs = args.inputs.unwrap_or(vec![(1, 2), (30, 1), (65536, 0)]);
@@ -72,7 +91,7 @@ fn poseidon(args: CliArgs) -> Result<Vec<u8>, Error> {
         ..Default::default()
     };
 
-    let params = Params::<Bn256>::unsafe_setup(k);
+    let params = ParamsKZG::<Bn256>::unsafe_setup(k);
     let os_rng = ChaCha8Rng::from_seed([101u8; 32]);
     let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
@@ -95,15 +114,49 @@ fn poseidon(args: CliArgs) -> Result<Vec<u8>, Error> {
     .unwrap();
 
     let proof_script = transcript.finalize();
-    // println!("{}", hex::encode(proof_script.clone()));
 
-    Ok(proof_script)
+    if args.verify.unwrap_or(true) {
+        verify_generated_proof(params.clone(), calcs, &proof_script)?;
+    }
+
+    let mut buf = Vec::new();
+    params.write(&mut buf).expect("Failed to write params");
+
+    Ok((proof_script, buf))
+}
+
+fn verify_generated_proof(
+    params: ParamsKZG<Bn256>,
+    calcs: usize,
+    proof_script: &[u8],
+) -> Result<bool, Error> {
+    let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof_script[..]);
+    let verifier_params: ParamsVerifier<Bn256> = params.verifier_params().clone();
+    let strategy = SingleStrategy::new(&params);
+    let circuit = TestCircuit(PoseidonHashTable::default(), calcs);
+    let vk = keygen_vk(&params, &circuit)?;
+
+    verify_proof::<KZGCommitmentScheme<Bn256>, VerifierSHPLONK<'_, Bn256>, _, _, _>(
+        &verifier_params,
+        &vk,
+        strategy,
+        &[&[]],
+        &mut transcript,
+    )?;
+
+    Ok(true)
 }
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    circuit_cli::run(|args: CliArgs| {
-        poseidon(args).map_err(|e| circuit_cli::Error::CliLogicError(e.to_string()))
-    })?;
+
+    circuit_cli::run(
+        |args: CliArgs| {
+            poseidon(args).map_err(|e| circuit_cli::Error::CliLogicError(e.to_string()))
+        },
+        |args: CliArgs| {
+            verify_poseidon(args).map_err(|e| circuit_cli::Error::CliLogicError(e.to_string()))
+        },
+    )?;
     Ok(())
 }
