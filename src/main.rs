@@ -1,8 +1,6 @@
 use std::fs::File;
 use std::io::{BufReader, Read};
 
-use base64::prelude::BASE64_STANDARD;
-use base64::Engine;
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::halo2curves::bn256::{Bn256, Fr as Fp, G1Affine};
 use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
