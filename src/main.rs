@@ -70,7 +70,10 @@ pub struct CliVerifyArgs {
     pub calcs: Option<usize>,
 }
 
-fn poseidon(args: CliArgs) -> Result<(Vec<u8>, Vec<u8>), Error> {
+fn poseidon(
+    args: CliArgs,
+    params_reader: Option<BufReader<File>>,
+) -> Result<(Vec<u8>, Vec<u8>), Error> {
     let k = args.k.unwrap_or(8);
 
     let inputs = args.inputs.unwrap_or(vec![(1, 2), (30, 1), (65536, 0)]);
@@ -87,7 +90,13 @@ fn poseidon(args: CliArgs) -> Result<(Vec<u8>, Vec<u8>), Error> {
         ..Default::default()
     };
 
-    let params = ParamsKZG::<Bn256>::unsafe_setup(k);
+    let params: ParamsKZG<Bn256>;
+    if let Some(mut params_r) = params_reader {
+        params = Params::read::<_>(&mut params_r).expect("Failed to read params");
+    } else {
+        params = ParamsKZG::<Bn256>::unsafe_setup(k);
+    }
+
     let os_rng = ChaCha8Rng::from_seed([101u8; 32]);
     let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
@@ -156,8 +165,9 @@ fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     circuit_cli::run(
-        |args: CliArgs| {
-            poseidon(args).map_err(|e| circuit_cli::Error::CliLogicError(e.to_string()))
+        |args: CliArgs, params_reader: Option<BufReader<File>>| {
+            poseidon(args, params_reader)
+                .map_err(|e| circuit_cli::Error::CliLogicError(e.to_string()))
         },
         |args: CliVerifyArgs, params_reader: &mut BufReader<File>, proof: &[u8]| {
             let params: ParamsKZG<Bn256> =
