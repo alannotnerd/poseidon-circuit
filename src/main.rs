@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::BufReader;
 
+use circuit_cli::CliOperator;
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::halo2curves::bn256::{Bn256, Fr as Fp, G1Affine};
 use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
@@ -161,20 +162,33 @@ fn verify_poseidon(
     verify_generated_proof(params, calcs, proof_script)
 }
 
+struct Operator;
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    circuit_cli::run(
-        |args: CliArgs, params_reader: Option<BufReader<File>>| {
-            poseidon(args, params_reader)
-                .map_err(|e| circuit_cli::Error::CliLogicError(e.to_string()))
-        },
-        |args: CliVerifyArgs, params_reader: &mut BufReader<File>, proof: &[u8]| {
-            let params: ParamsKZG<Bn256> =
-                Params::read::<_>(params_reader).expect("Failed to read params");
-            verify_poseidon(args, params, proof)
-                .map_err(|e| circuit_cli::Error::CliLogicError(e.to_string()))
-        },
-    )?;
+    circuit_cli::run(Operator)?;
     Ok(())
+}
+
+impl CliOperator<CliArgs, CliVerifyArgs> for Operator {
+    fn create_proof(
+        &self,
+        args: CliArgs,
+        params_reader: Option<BufReader<File>>,
+    ) -> circuit_cli::Result<(Vec<u8>, Vec<u8>)> {
+        poseidon(args, params_reader).map_err(|e| circuit_cli::Error::CliLogicError(e.to_string()))
+    }
+
+    fn verify_proof(
+        &self,
+        args: CliVerifyArgs,
+        mut params_reader: BufReader<File>,
+        proof: &[u8],
+    ) -> circuit_cli::Result<bool> {
+        let params: ParamsKZG<Bn256> =
+            Params::read::<_>(&mut params_reader).expect("Failed to read params");
+        verify_poseidon(args, params, proof)
+            .map_err(|e| circuit_cli::Error::CliLogicError(e.to_string()))
+    }
 }
