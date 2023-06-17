@@ -183,11 +183,13 @@ impl CliOperator<CliArgs, CliVerifyArgs> for Operator {
     fn verify_proof(
         &self,
         args: CliVerifyArgs,
-        mut params_reader: BufReader<File>,
+        params_reader: Option<BufReader<File>>,
         proof: &[u8],
     ) -> circuit_cli::Result<bool> {
-        let params: ParamsKZG<Bn256> =
-            Params::read::<_>(&mut params_reader).expect("Failed to read params");
+        let params: ParamsKZG<Bn256> = Params::read::<_>(&mut params_reader.ok_or(
+            circuit_cli::Error::CliLogicError("params reader is None".to_string()),
+        )?)
+        .expect("Failed to read params");
         verify_poseidon(args, params, proof)
             .map_err(|e| circuit_cli::Error::CliLogicError(e.to_string()))
     }
