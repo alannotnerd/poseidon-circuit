@@ -165,8 +165,6 @@ fn verify_poseidon(
 struct Operator;
 
 fn main() -> anyhow::Result<()> {
-    env_logger::init();
-
     circuit_cli::run(Operator)?;
     Ok(())
 }
